@@ -31,8 +31,7 @@ jobs:
 
   test:
     name: Run unit tests
-    # Use GitHub-hosted runner so we can spin up a Postgres service for CI
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: lint
     strategy:
       matrix:
