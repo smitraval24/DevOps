@@ -31,11 +31,28 @@ jobs:
 
   test:
     name: Run unit tests
-    runs-on: [self-hosted, linux, x64]
+    # Use GitHub-hosted runner so we can spin up a Postgres service for CI
+    runs-on: ubuntu-latest
     needs: lint
     strategy:
       matrix:
         node-version: [18.x]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: coffee_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/coffee_test
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,6 +65,22 @@ jobs:
       - name: Install dependencies
         working-directory: coffee_project
         run: npm install
+
+      - name: Wait for Postgres
+        run: |
+          echo "Waiting for Postgres to be ready..."
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              echo "Postgres is ready" && break
+            fi
+            sleep 2
+          done
+        env:
+          PGPASSWORD: postgres
+
+      - name: Run migrations
+        working-directory: coffee_project
+        run: npm run migrate
 
       - name: Run tests
         working-directory: coffee_project
