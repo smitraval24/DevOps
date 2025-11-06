@@ -1,0 +1,72 @@
+name: Deploy to VCL 2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy coffee app to VCL 2
+    runs-on: [self-hosted, linux, x64]
+    
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VCL2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.VCL2_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to VCL 2
+        env:
+          SSH_KEY: ~/.ssh/deploy_key
+          VCL2_USER: ${{ secrets.VCL2_SSH_USER }}
+          VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
+          PROJECT_DIR: ~/devops-project
+        run: |
+          ssh -i $SSH_KEY -o StrictHostKeyChecking=no $VCL2_USER@$VCL2_HOST << 'ENDSSH'
+            set -e
+            
+            echo "=== Navigating to project directory ==="
+            cd $HOME/devops-project
+            
+            echo "=== Pulling latest code from main ==="
+            git pull origin main
+            
+            echo "=== Navigating to coffee_project ==="
+            cd coffee_project
+            
+            echo "=== Stopping old containers ==="
+            docker-compose down || true
+            
+            echo "=== Removing old containers and images ==="
+            docker-compose rm -f || true
+            
+            echo "=== Building and starting new containers ==="
+            docker-compose up -d --build
+            
+            echo "=== Waiting for containers to be ready ==="
+            sleep 15
+            
+            echo "=== Deployment complete! ==="
+            echo "Coffee app is now running at http://$VCL2_HOST:3000"
+            
+            echo "=== Container status ==="
+            docker-compose ps
+          ENDSSH
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+
+      - name: Verify deployment
+        env:
+          VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
+        run: |
+          echo "Waiting 5 seconds for app to be ready..."
+          sleep 5
+          
+          echo "Testing deployment..."
+          curl -f http://$VCL2_HOST:3000/coffees || echo "Warning: Could not reach the app"

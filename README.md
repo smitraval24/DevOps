@@ -114,3 +114,88 @@ docker stop coffee-pg && docker rm coffee-pg
 Questions or different DB?
 
 If you'd prefer a different database (MySQL, MongoDB, etc.) I can adapt the code and migration script — tell me which one and I'll implement the change.
+
+## Automated Deployment
+
+The project uses GitHub Actions to automatically deploy to VCL 2 when code is merged to `main`.
+
+### How it works
+
+1. When a PR is merged to `main`, the deployment workflow triggers
+2. The workflow (running on the self-hosted runner on VCL 1) SSHs into VCL 2
+3. Pulls the latest code from the `main` branch
+4. Stops old Docker containers
+5. Rebuilds and starts new containers with the updated code
+6. The app becomes accessible at **http://152.7.178.106:3000**
+
+### Prerequisites for deployment
+
+**On VCL 2 (152.7.178.106):**
+- Docker and Docker Compose installed
+- Project cloned at `~/devops-project`
+- SSH access configured for GitHub Actions
+
+**GitHub Repository Secrets (required):**
+- `VCL2_SSH_PRIVATE_KEY` - SSH private key for accessing VCL 2
+- `VCL2_SSH_KNOWN_HOSTS` - (optional) Host key for VCL 2
+
+### Setting up SSH for GitHub Actions
+
+1. Generate a dedicated SSH key pair:
+```bash
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_actions_deploy_key
+```
+
+2. Copy the public key to VCL 2:
+```bash
+ssh-copy-id -i ~/.ssh/github_actions_deploy_key.pub vpatel29@152.7.178.106
+```
+
+3. Add the private key to GitHub Secrets:
+```bash
+# Copy the private key
+cat ~/.ssh/github_actions_deploy_key
+
+# Go to: Repository Settings → Secrets and variables → Actions
+# Create secret: VCL2_SSH_PRIVATE_KEY
+# Paste the entire private key content (including BEGIN/END lines)
+```
+
+4. (Optional) Add known hosts:
+```bash
+ssh-keyscan -H 152.7.178.106
+
+# Add as secret: VCL2_SSH_KNOWN_HOSTS
+```
+
+### Manual deployment on VCL 2
+
+If you need to deploy manually:
+
+```bash
+ssh vpatel29@152.7.178.106
+cd ~/devops-project
+git pull origin main
+cd coffee_project
+docker-compose down
+docker-compose up -d --build
+```
+
+### Accessing the deployed app
+
+Once deployed, the coffee delivery service is accessible at:
+- **http://152.7.178.106:3000**
+
+Test endpoints:
+```bash
+# Get available coffees
+curl http://152.7.178.106:3000/coffees
+
+# Place an order
+curl -X POST http://152.7.178.106:3000/order \
+  -H "Content-Type: application/json" \
+  -d '{"coffeeId": 1, "quantity": 2}'
+
+# View all orders
+curl http://152.7.178.106:3000/orders
+```
