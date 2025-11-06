@@ -1,11 +1,43 @@
 # DevOps Project
 
-This repository contains the main DevOps project and uses [coffee-project](https://github.ncsu.edu/CSC-519/coffee-project.git) as a Git submodule.
+This repository contains the main DevOps project with a coffee delivery service.
 
-IP Address 
-VCL 1 :- 152.7.178.184 (for routing and DNS routing)
-VCL 2 :- 152.7.178.106 (primary server)
-VCL 3 :- 152.7.178.91 (cold server)
+## Infrastructure
+
+**VCL Machines:**
+- **VCL 1**: 152.7.178.184 (Routing and DNS)
+- **VCL 2**: 152.7.178.106 (Primary server)
+- **VCL 3**: 152.7.178.91 (Cold standby server)
+
+## Quick Start with Docker
+
+Run the coffee project with PostgreSQL database using Docker:
+
+```bash
+cd coffee_project
+docker-compose up -d
+```
+
+This starts:
+- Coffee app on http://localhost:3000
+- PostgreSQL database on port 5432
+
+### Test the app
+```bash
+# Get available coffees
+curl http://localhost:3000/coffees
+
+# Place an order
+curl -X POST http://localhost:3000/order \
+  -H "Content-Type: application/json" \
+  -d '{"coffeeId": 1, "quantity": 2}'
+```
+
+### Stop containers
+```bash
+docker-compose down
+```
+
 ## Database setup (PostgreSQL)
 
 This project uses PostgreSQL for the `coffee_project` service. The app reads the connection from the `DATABASE_URL` environment variable. If `DATABASE_URL` is not set, the project defaults to:
