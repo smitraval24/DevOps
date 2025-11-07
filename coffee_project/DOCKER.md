@@ -1,5 +1,4 @@
 # Coffee Project - Docker Setup
-
 ## Quick Start
 
 ```bash
