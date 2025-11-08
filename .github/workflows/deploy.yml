@@ -109,6 +109,7 @@ jobs:
 
       - name: Backup latest to VCL3 (if VCL2 healthy)
         if: success()
+        continue-on-error: true
         env:
           VCL3_USER: ${{ secrets.VCL3_SSH_USER }}
           VCL3_HOST: ${{ secrets.VCL3_SSH_HOST }}
@@ -117,6 +118,14 @@ jobs:
           VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
         run: |
           echo "Pulling latest code on VCL3 for backup"
+          
+          # Check if VCL3 secrets are configured
+          if [ -z "$VCL3_USER" ] || [ -z "$VCL3_HOST" ]; then
+            echo "⚠️  VCL3 not configured (missing VCL3_SSH_USER or VCL3_SSH_HOST secrets)"
+            echo "Skipping VCL3 backup step"
+            exit 0
+          fi
+          
           # Repo URL is expanded on the runner so remote can clone using HTTPS
           REPO_URL="https://github.com/$GITHUB_REPOSITORY"
           # Use separate SSH key for VCL3 if available, else reuse the same deploy_key secret
@@ -126,29 +135,42 @@ jobs:
             chmod 600 ~/.ssh/vcl3_deploy_key
             SSH_KEY=~/.ssh/vcl3_deploy_key
           else
+            echo "Reusing VCL2 SSH key for VCL3"
             SSH_KEY=~/.ssh/deploy_key
           fi
 
+          # Test connectivity first
+          if ! nc -zv -w 5 $VCL3_HOST 22 2>&1; then
+            echo "⚠️  Cannot reach VCL3 at $VCL3_HOST:22"
+            echo "Skipping VCL3 backup step"
+            exit 0
+          fi
+
           # Use unquoted heredoc so REPO_URL is expanded on the runner before sending to remote
-          ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL3_USER@$VCL3_HOST <<ENDSSH
+          if ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL3_USER@$VCL3_HOST <<ENDSSH
             set -e
             echo "=== Ensure backup directory exists ==="
-            mkdir -p $HOME/vcl3_backups/devops-project
-            cd $HOME/vcl3_backups/devops-project
+            mkdir -p \$HOME/vcl3_backups/devops-project
+            cd \$HOME/vcl3_backups/devops-project
 
-            if [ -d "$HOME/devops-project/.git" ]; then
+            if [ -d "\$HOME/devops-project/.git" ]; then
               echo "Repository already exists, pulling latest"
-              cd $HOME/devops-project
+              cd \$HOME/devops-project
               git fetch --all
               git reset --hard origin/main
             else
               echo "Cloning repository as backup"
-              git clone $REPO_URL $HOME/devops-project || true
+              git clone $REPO_URL \$HOME/devops-project || true
             fi
 
             echo "Backup update complete"
-            ls -la $HOME/devops-project | head -n 20
+            ls -la \$HOME/devops-project | head -n 20
           ENDSSH
+          then
+            echo "✓ VCL3 backup completed successfully"
+          else
+            echo "⚠️  VCL3 backup failed, but deployment to VCL2 was successful"
+          fi
 
           # cleanup temporary vcl3 key if created
           rm -f ~/.ssh/vcl3_deploy_key || true
