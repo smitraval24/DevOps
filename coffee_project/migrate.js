@@ -1,3 +1,4 @@
+const { Pool } = require('pg');
 const { pool } = require('./db');
 
 const coffees = [
@@ -6,7 +7,38 @@ const coffees = [
   { id: 3, name: 'Cappuccino', price: 4 },
 ];
 
+async function ensureDatabase() {
+  // Connect to default 'postgres' database to create coffee_dev if needed
+  const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@db:5432/postgres';
+  const defaultDbUrl = dbUrl.replace(/\/[^/]+$/, '/postgres');
+  
+  const adminPool = new Pool({ connectionString: defaultDbUrl });
+  
+  try {
+    // Check if coffee_dev exists
+    const result = await adminPool.query(
+      "SELECT 1 FROM pg_database WHERE datname = 'coffee_dev'"
+    );
+    
+    if (result.rows.length === 0) {
+      console.log('Creating database coffee_dev...');
+      await adminPool.query('CREATE DATABASE coffee_dev');
+      console.log('Database coffee_dev created');
+    } else {
+      console.log('Database coffee_dev already exists');
+    }
+  } catch (err) {
+    console.error('Error checking/creating database:', err.message);
+  } finally {
+    await adminPool.end();
+  }
+}
+
 async function migrate() {
+  // First ensure the database exists
+  await ensureDatabase();
+  
+  // Now run migrations on coffee_dev
   await pool.query(`
     CREATE TABLE IF NOT EXISTS coffees (
       id INTEGER PRIMARY KEY,
@@ -30,6 +62,7 @@ async function migrate() {
   }
 
   console.log('Postgres migration + seed complete');
+  await pool.end();
   process.exit(0);
 }
 
