@@ -60,35 +60,8 @@ jobs:
             echo "=== Building and starting new containers ==="
             sudo docker-compose up -d --build
             
-            echo "=== Waiting for containers to be ready ==="
-            # give services some time to start
-            sleep 10
-
-            echo "=== Waiting for DB healthcheck ==="
-            # wait up to ~60s for postgres to report healthy via docker healthcheck or pg_isready
-            for i in {1..12}; do
-              if sudo docker inspect --format='{{.State.Health.Status}}' coffee_db 2>/dev/null | grep -q healthy; then
-                echo "DB container healthy"
-                break
-              fi
-              if sudo docker exec coffee_db pg_isready -U postgres > /dev/null 2>&1; then
-                echo "Postgres is ready via pg_isready"
-                break
-              fi
-              echo "Waiting for DB... ($i/12)"
-              sleep 5
-            done
-
-            echo "=== Waiting for app to respond ==="
-            # wait for app port to be responsive on localhost inside the host
-            for i in {1..12}; do
-              if curl -sS -f http://localhost:3000/ >/dev/null 2>&1; then
-                echo "App responded on localhost:3000"
-                break
-              fi
-              echo "Waiting for app... ($i/12)"
-              sleep 5
-            done
+            echo "=== Waiting for containers to start ==="
+            sleep 15
             
             echo "=== Deployment complete! ==="
             sudo docker-compose ps
@@ -100,29 +73,39 @@ jobs:
           VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
           VCL2_USER: ${{ secrets.VCL2_SSH_USER }}
         run: |
-          echo "Running health checks by SSHing into VCL2 and testing endpoints"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL2_USER@$VCL2_HOST << 'ENDSSH'
-            set -e
-            echo "== App HTTP check =="
-            # retry HTTP check up to 12 times (60s)
-            for i in {1..12}; do
-              if curl -sS -f http://localhost:3000/ >/dev/null 2>&1; then
-                echo "HTTP OK"
-                break
-              fi
-              echo "HTTP not ready ($i/12)"
-              sleep 5
-            done
+          echo "Running health checks against VCL2 from Actions runner"
+          echo "Waiting for services to be ready..."
+          sleep 10
+          
+          echo "== App HTTP check =="
+          # retry HTTP check up to 12 times (60s) against VCL2's external IP
+          for i in {1..12}; do
+            if curl -sS -f http://$VCL2_HOST:3000/ >/dev/null 2>&1; then
+              echo "✓ App is reachable at http://$VCL2_HOST:3000/"
+              APP_OK=true
+              break
+            fi
+            echo "HTTP not ready ($i/12)"
+            sleep 5
+          done
 
-            echo "== DB check =="
-            # check postgres via pg_isready
+          if [ "$APP_OK" != "true" ]; then
+            echo "✗ App health check failed" >&2
+            exit 1
+          fi
+
+          echo "== DB check =="
+          # check postgres via SSH and pg_isready
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL2_USER@$VCL2_HOST << 'ENDSSH'
             if sudo docker exec coffee_db pg_isready -U postgres > /dev/null 2>&1; then
-              echo "DB OK"
+              echo "✓ Database is ready"
             else
-              echo "DB not ready" >&2
+              echo "✗ Database not ready" >&2
               exit 1
             fi
           ENDSSH
+          
+          echo "== All health checks passed =="
 
       - name: Backup latest to VCL3 (if VCL2 healthy)
         if: success()
