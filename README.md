@@ -6,14 +6,22 @@ This repository contains the main DevOps project with a coffee delivery service.
 
 **VCL Machines:**
 - **VCL 1**: 152.7.178.184 (Routing and DNS)
-- **VCL 2**: 152.7.178.106 (Primary server with auto-deployment)
+- **VCL 2**: 152.7.178.106 (Primary server with auto-deployment + Cloudflare Tunnel)
 - **VCL 3**: 152.7.178.91 (Cold standby server with DB replication)
+
+**Public Access:**
+- **Cloudflare Tunnel**: Secure public access via `https://coffee-vcl2-*.trycloudflare.com`
+  - No domain required
+  - Free HTTPS/SSL
+  - DDoS protection
+  - Zero-trust security (no exposed IP)
 
 **High Availability Features:**
 - ✅ Automatic deployment to VCL2 on merge to `main` branch
 - ✅ Database replication from VCL2 to VCL3 every 2 minutes
 - ✅ Auto-sync `dev` branch after PR merge to `main`
 - ✅ Linting and testing in CI/CD pipeline
+- ✅ Cloudflare Tunnel for secure public access (no domain needed)
 
 ## Quick Start with Docker
 
@@ -43,6 +51,44 @@ curl -X POST http://localhost:3000/order \
 ```bash
 docker-compose down
 ```
+
+## Public Access via Cloudflare Tunnel
+
+Access your coffee app from anywhere using Cloudflare Tunnel (no domain required):
+
+### One-Time Setup on VCL2
+
+```bash
+cd ~/devops-project
+chmod +x scripts/setup-cloudflare-tunnel.sh
+./scripts/setup-cloudflare-tunnel.sh
+```
+
+This will:
+- Install `cloudflared`
+- Create a persistent tunnel
+- Set up auto-start on boot
+- Give you a public URL like `https://coffee-vcl2-abc123.trycloudflare.com`
+
+### Get Your Public URL
+
+```bash
+# Quick way
+chmod +x scripts/get-tunnel-url.sh
+./scripts/get-tunnel-url.sh
+
+# Or check logs
+sudo journalctl -u cloudflared | grep trycloudflare.com
+```
+
+### Test Public Access
+
+```bash
+# Replace with your actual URL
+curl https://your-tunnel-url.trycloudflare.com/coffees
+```
+
+**Full Documentation**: See [CLOUDFLARE_TUNNEL_SETUP.md](CLOUDFLARE_TUNNEL_SETUP.md)
 
 ## High Availability Setup
 
