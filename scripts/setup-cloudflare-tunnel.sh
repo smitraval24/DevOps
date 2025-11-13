@@ -75,23 +75,28 @@ echo ""
 
 # Step 4: Authentication
 echo -e "${YELLOW}Step 4: Authenticating with Cloudflare...${NC}"
-echo ""
-echo "A browser window will open for you to log in to Cloudflare."
-echo "If you're on a remote server, you may need to:"
-echo "  1. Copy the URL that appears"
-echo "  2. Open it in your local browser"
-echo "  3. Complete the authentication"
-echo ""
-read -p "Press Enter to continue with authentication..."
 
-cloudflared tunnel login
+if [ -f "$CLOUDFLARED_DIR/cert.pem" ]; then
+    echo -e "${GREEN}✓ Already authenticated (cert.pem exists)${NC}"
+else
+    echo ""
+    echo "A browser window will open for you to log in to Cloudflare."
+    echo "If you're on a remote server, you may need to:"
+    echo "  1. Copy the URL that appears"
+    echo "  2. Open it in your local browser"
+    echo "  3. Complete the authentication"
+    echo ""
+    read -p "Press Enter to continue with authentication..."
 
-if [ ! -f "$CLOUDFLARED_DIR/cert.pem" ]; then
-    echo -e "${RED}Error: Authentication failed. cert.pem not found.${NC}"
-    exit 1
+    cloudflared tunnel login
+
+    if [ ! -f "$CLOUDFLARED_DIR/cert.pem" ]; then
+        echo -e "${RED}Error: Authentication failed. cert.pem not found.${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Authentication successful${NC}"
 fi
-
-echo -e "${GREEN}✓ Authentication successful${NC}"
 echo ""
 
 # Step 5: Create tunnel
@@ -171,7 +176,11 @@ echo ""
 # Step 9: Install systemd service
 echo -e "${YELLOW}Step 9: Installing systemd service for auto-start...${NC}"
 
-sudo cloudflared service install
+# Uninstall existing service if any (ignore errors)
+sudo cloudflared service uninstall 2>/dev/null || true
+
+# Install with explicit config path
+sudo cloudflared --config "$CONFIG_FILE" service install
 
 echo -e "${GREEN}✓ Systemd service installed${NC}"
 echo ""
@@ -179,8 +188,9 @@ echo ""
 # Step 10: Enable and start service
 echo -e "${YELLOW}Step 10: Enabling and starting cloudflared service...${NC}"
 
+sudo systemctl daemon-reload
 sudo systemctl enable cloudflared
-sudo systemctl start cloudflared
+sudo systemctl restart cloudflared
 
 sleep 3
 
