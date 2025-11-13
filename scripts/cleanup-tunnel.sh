@@ -50,8 +50,14 @@ echo ""
 # Step 2: Delete tunnel
 echo -e "${YELLOW}Step 2: Deleting tunnel '$TUNNEL_NAME'...${NC}"
 if cloudflared tunnel list 2>/dev/null | grep -q "$TUNNEL_NAME"; then
-    cloudflared tunnel delete "$TUNNEL_NAME" -f
-    echo "  ✓ Tunnel deleted"
+    # Get tunnel ID and delete by ID
+    TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    if [ -n "$TUNNEL_ID" ]; then
+        cloudflared tunnel delete -f "$TUNNEL_ID" 2>/dev/null || cloudflared tunnel delete "$TUNNEL_ID" 2>/dev/null || echo "  ! Could not delete tunnel, may need manual cleanup"
+        echo "  ✓ Tunnel deleted (ID: $TUNNEL_ID)"
+    else
+        echo "  ! Could not find tunnel ID"
+    fi
 else
     echo "  ✓ Tunnel does not exist or already deleted"
 fi

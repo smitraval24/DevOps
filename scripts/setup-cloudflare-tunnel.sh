@@ -104,8 +104,19 @@ echo -e "${YELLOW}Step 5: Creating tunnel '$TUNNEL_NAME'...${NC}"
 
 # Check if tunnel already exists
 if cloudflared tunnel list | grep -q "$TUNNEL_NAME"; then
-    echo -e "${YELLOW}Tunnel '$TUNNEL_NAME' already exists. Skipping creation.${NC}"
     TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    
+    # Check if credentials file exists
+    if [ ! -f "$CLOUDFLARED_DIR/$TUNNEL_ID.json" ]; then
+        echo -e "${YELLOW}Tunnel exists but credentials missing. Deleting and recreating...${NC}"
+        cloudflared tunnel delete -f "$TUNNEL_ID" 2>/dev/null || true
+        cloudflared tunnel create "$TUNNEL_NAME"
+        TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+        echo -e "${GREEN}✓ Tunnel recreated with ID: $TUNNEL_ID${NC}"
+    else
+        echo -e "${YELLOW}Tunnel '$TUNNEL_NAME' already exists with valid credentials.${NC}"
+        echo -e "${GREEN}✓ Using existing tunnel ID: $TUNNEL_ID${NC}"
+    fi
 else
     cloudflared tunnel create "$TUNNEL_NAME"
     TUNNEL_ID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
