@@ -18,6 +18,7 @@ This repository contains the main DevOps project with a coffee delivery service.
 
 **High Availability Features:**
 - ✅ Automatic deployment to VCL2 on merge to `main` branch
+- ✅ **Automatic rollback** on deployment failure (restores previous version)
 - ✅ Database replication from VCL2 to VCL3 every 2 minutes
 - ✅ Auto-sync `dev` branch after PR merge to `main`
 - ✅ Linting and testing in CI/CD pipeline
@@ -218,10 +219,31 @@ The project uses GitHub Actions to automatically deploy to VCL 2 when code is me
 
 1. When a PR is merged to `main`, the deployment workflow triggers
 2. The workflow (running on the self-hosted runner on VCL 1) SSHs into VCL 2
-3. Pulls the latest code from the `main` branch
-4. Stops old Docker containers
-5. Rebuilds and starts new containers with the updated code
-6. The app becomes accessible at **http://152.7.178.106:3000**
+3. **Creates a backup** of the current running container
+4. Pulls the latest code from the `main` branch
+5. Stops old Docker containers
+6. Rebuilds and starts new containers with the updated code
+7. **Runs health checks** (HTTP + Database)
+8. **If health checks pass:** Cleans up backup and syncs to VCL3 ✓
+9. **If health checks fail:** Automatically rolls back to previous version ✗
+
+The app is accessible at **http://152.7.178.106:3000**
+
+### Automatic Rollback
+
+If a deployment fails health checks, the system **automatically restores** the previous working version:
+
+- ✅ Zero manual intervention required
+- ✅ Application stays online (no downtime)
+- ✅ Previous container is restored within seconds
+- ✅ Database remains unchanged (app-only rollback)
+
+**Health Check Criteria:**
+- HTTP endpoint responds: `GET /coffees` returns 200 OK
+- Database is ready: `pg_isready` succeeds
+- All checks must pass within 60 seconds
+
+**Full Documentation:** See [ROLLBACK_GUIDE.md](ROLLBACK_GUIDE.md) for detailed information
 
 ### Prerequisites for deployment
 
@@ -275,6 +297,18 @@ cd coffee_project
 docker-compose down
 docker-compose up -d --build
 ```
+
+### Manual rollback on VCL 2
+
+If you need to manually rollback to the previous version:
+
+```bash
+ssh vpatel29@152.7.178.106
+cd ~/devops-project
+./scripts/rollback-container.sh
+```
+
+**Note:** Manual rollback only works if a backup exists. Backups are automatically created before each deployment and cleaned up after successful deployments.
 
 ### Accessing the deployed app
 
