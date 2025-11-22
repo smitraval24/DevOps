@@ -234,6 +234,21 @@ jobs:
             else
               echo "⚠️  Failed to make scripts executable on VCL3"
             fi
+
+            # Update Cloudflare tunnel config on VCL3
+            echo "Updating Cloudflare tunnel config on VCL3..."
+            timeout 15 ssh -T -i $SSH_KEY \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              -o BatchMode=yes \
+              $VCL3_USER@$VCL3_HOST \
+              'cd ~/devops-project && if [ -f "config/cloudflared-config.yml" ]; then cp config/cloudflared-config.yml ~/.cloudflared/config.yml && echo "✓ Cloudflared config updated" && sudo systemctl restart cloudflared 2>/dev/null && echo "✓ Cloudflared restarted" || echo "⚠️  Cloudflared not installed or not running"; else echo "⚠️  Config file not found"; fi' 2>&1
+
+            if [ $? -eq 0 ]; then
+              echo "✓ VCL3 cloudflared config updated"
+            else
+              echo "⚠️  Failed to update cloudflared config on VCL3"
+            fi
           elif [ $EXIT_CODE -eq 124 ]; then
             echo "⚠️  VCL3 backup timed out after 30 seconds"
           else
