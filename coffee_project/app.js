@@ -1,7 +1,7 @@
 // app.js
 
 const express = require('express');
-const { query, pool, testConnection, closePool } = require('./db');
+const { query, pool } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,35 +9,14 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('public'));
 
-// Health check endpoint with database validation
-app.get('/health', async (req, res) => {
-  try {
-    // Check if we can query the database
-    await pool.query('SELECT 1');
-    res.status(200).json({
-      status: 'healthy',
-      database: 'connected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (err) {
-    console.error('Health check failed:', err);
-    res.status(503).json({
-      status: 'unhealthy',
-      database: 'disconnected',
-      error: err.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
 // Endpoint to fetch available coffees
 app.get('/coffees', async (req, res) => {
   try {
     const result = await query('SELECT id, name, price FROM coffees ORDER BY id');
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching coffees:', err);
-    res.status(500).json({ error: 'Error loading coffees. Please try again.' });
+    console.error(err);
+    res.status(500).json({ error: 'DB error' });
   }
 });
 
@@ -68,8 +47,8 @@ app.post('/order', async (req, res) => {
 
     res.status(201).json(order);
   } catch (err) {
-    console.error('Error placing order:', err);
-    res.status(500).json({ error: 'Error placing order. Please try again.' });
+    console.error(err);
+    res.status(500).json({ error: 'DB error' });
   }
 });
 
@@ -84,8 +63,8 @@ app.get('/orders', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching orders:', err);
-    res.status(500).json({ error: 'Error loading orders. Please try again.' });
+    console.error(err);
+    res.status(500).json({ error: 'DB error' });
   }
 });
 
@@ -110,63 +89,18 @@ app.put('/coffees/:id/price', async (req, res) => {
 
     res.json({ 
       message: 'Price updated successfully', 
-      coffee: result.rows[0]
+      coffee: result.rows[0] 
     });
   } catch (err) {
-    console.error('Error updating price:', err);
-    res.status(500).json({ error: 'Error updating price. Please try again.' });
+    console.error(err);
+    res.status(500).json({ error: 'DB error' });
   }
 });
 
 if (require.main === module) {
-  // Test database connection before starting server
-  (async () => {
-    console.log('Testing database connection...');
-    const connected = await testConnection();
-
-    if (!connected) {
-      console.error('CRITICAL: Failed to establish database connection');
-      console.error('Server will start but may not function correctly');
-      // Continue anyway - connection pool will retry on each request
-    } else {
-      // Warm up the connection pool by pre-establishing connections
-      console.log('Warming up connection pool...');
-      try {
-        const warmupPromises = [];
-        for (let i = 0; i < 2; i++) {
-          warmupPromises.push(pool.query('SELECT 1'));
-        }
-        await Promise.all(warmupPromises);
-        console.log('✓ Connection pool warmed up');
-      } catch (err) {
-        console.warn('Warning: Failed to warm up connection pool:', err.message);
-      }
-    }
-
-    const server = app.listen(PORT, () => {
-      console.log(`✓ Server started on http://localhost:${PORT}`);
-      console.log(`✓ Health check available at http://localhost:${PORT}/health`);
-    });
-
-    // Graceful shutdown
-    const shutdown = async (signal) => {
-      console.log(`\n${signal} received. Closing server gracefully...`);
-      server.close(async () => {
-        console.log('HTTP server closed');
-        await closePool();
-        process.exit(0);
-      });
-
-      // Force shutdown after 10s
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-  })();
+  app.listen(PORT, () => {
+    console.log(`Server started on http://localhost:${PORT}`);
+  });
 }
 
 module.exports = app;

@@ -8,7 +8,7 @@ jobs:
   deploy:
     name: Deploy coffee app to VCL 2
     runs-on: [self-hosted, linux, x64]
-
+    
     steps:
       - name: Setup SSH
         env:
@@ -17,14 +17,14 @@ jobs:
           mkdir -p ~/.ssh
           echo "$VCL2_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
+          
           # Debug: Check if key file is created and has content
           echo "SSH key file created:"
           ls -lh ~/.ssh/deploy_key
           echo "Key fingerprint (first/last lines only):"
           head -n 1 ~/.ssh/deploy_key
           tail -n 1 ~/.ssh/deploy_key
-
+          
       - name: Test VCL2 connectivity
         env:
           VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
@@ -57,11 +57,6 @@ jobs:
             echo "=== Applying stashed changes (if any) ==="
             git stash pop || true
             
-            echo "=== Creating backup of current container ==="
-            cd $HOME/devops-project
-            chmod +x scripts/backup-container.sh
-            ./scripts/backup-container.sh || echo "Warning: Backup failed or no container to backup"
-            
             echo "=== Navigating to coffee_project ==="
             cd coffee_project
             
@@ -79,28 +74,6 @@ jobs:
             
             echo "=== Deployment complete! ==="
             sudo docker-compose ps
-
-            echo "=== Updating Cloudflare Tunnel configuration ==="
-            cd $HOME/devops-project
-            if [ -f "config/cloudflared-config.yml" ]; then
-              cp config/cloudflared-config.yml ~/.cloudflared/config.yml
-              echo "✓ Cloudflared config updated"
-
-              # Fix systemd service to use config file instead of token
-              if [ -f "scripts/fix-cloudflared-service.sh" ]; then
-                chmod +x scripts/fix-cloudflared-service.sh
-                ./scripts/fix-cloudflared-service.sh
-                echo "✓ Cloudflared service fixed to use config file"
-              else
-                # Fallback: just restart
-                sudo systemctl restart cloudflared
-                echo "✓ Cloudflared restarted"
-                sleep 3
-                sudo systemctl status cloudflared --no-pager || true
-              fi
-            else
-              echo "⚠️  Cloudflared config not found in repository"
-            fi
           ENDSSH
 
       - name: Run health checks from Actions (VCL2)
@@ -112,7 +85,7 @@ jobs:
           echo "Running health checks against VCL2 from Actions runner"
           echo "Waiting for services to be ready..."
           sleep 10
-
+          
           echo "== App HTTP check =="
           # retry HTTP check up to 12 times (60s) against VCL2's external IP
           for i in {1..12}; do
@@ -140,27 +113,10 @@ jobs:
               exit 1
             fi
           ENDSSH
-
+          
           echo "== All health checks passed =="
 
-      - name: Rollback on deployment failure
-        if: failure()
-        env:
-          VCL2_USER: ${{ secrets.VCL2_SSH_USER }}
-          VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
-        run: |
-          echo "=== HEALTH CHECKS FAILED - INITIATING ROLLBACK ==="
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL2_USER@$VCL2_HOST << 'ENDSSH'
-            cd $HOME/devops-project
-            chmod +x scripts/rollback-container.sh
-            ./scripts/rollback-container.sh
-          ENDSSH
-
-          echo "=== ROLLBACK COMPLETED ==="
-          echo "The application has been restored to the previous working version."
-          exit 1
-
-      - name: Cleanup backup and sync to VCL3 (if VCL2 healthy)
+      - name: Backup latest to VCL3 (if VCL2 healthy)
         if: success()
         continue-on-error: true
         env:
@@ -170,24 +126,15 @@ jobs:
           VCL2_USER: ${{ secrets.VCL2_SSH_USER }}
           VCL2_HOST: ${{ secrets.VCL2_SSH_HOST }}
         run: |
-          echo "Deployment successful! Cleaning up backup..."
-
-          # Cleanup backup on VCL2
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $VCL2_USER@$VCL2_HOST << 'ENDSSH'
-            cd $HOME/devops-project
-            chmod +x scripts/cleanup-backup.sh
-            ./scripts/cleanup-backup.sh
-          ENDSSH
-
           echo "Pulling latest code on VCL3 for backup"
-
+          
           # Check if VCL3 secrets are configured
           if [ -z "$VCL3_USER" ] || [ -z "$VCL3_HOST" ]; then
             echo "⚠️  VCL3 not configured (missing VCL3_SSH_USER or VCL3_SSH_HOST secrets)"
             echo "Skipping VCL3 backup step"
             exit 0
           fi
-
+          
           # Repo URL is expanded on the runner so remote can clone using HTTPS
           REPO_URL="https://github.ncsu.edu/vatsaldp/devops-project"
           # Use separate SSH key for VCL3 if available, else reuse the same deploy_key secret
@@ -211,7 +158,7 @@ jobs:
           # Pull latest code on VCL3
           echo "Pulling latest code on VCL3..."
           set +e
-
+          
           # Use -T to disable pseudo-tty allocation and add timeouts
           timeout 30 ssh -T -i $SSH_KEY \
             -o StrictHostKeyChecking=no \
@@ -220,47 +167,17 @@ jobs:
             -o ServerAliveCountMax=3 \
             -o BatchMode=yes \
             $VCL3_USER@$VCL3_HOST \
-            'cd ~/devops-project && git fetch origin main && git reset --hard origin/main 2>&1'
-
+            'cd ~/devops-project && GIT_TERMINAL_PROMPT=0 git pull origin main 2>&1'
+          
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 0 ]; then
-            echo "✓ VCL3 code sync completed successfully"
-
-            # Make all scripts executable on VCL3
-            echo "Making scripts executable on VCL3..."
-            timeout 15 ssh -T -i $SSH_KEY \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              -o BatchMode=yes \
-              $VCL3_USER@$VCL3_HOST \
-              'chmod +x ~/devops-project/scripts/*.sh 2>&1'
-
-            if [ $? -eq 0 ]; then
-              echo "✓ VCL3 scripts are now executable"
-            else
-              echo "⚠️  Failed to make scripts executable on VCL3"
-            fi
-
-            # Update Cloudflare tunnel config on VCL3
-            echo "Updating Cloudflare tunnel config on VCL3..."
-            timeout 15 ssh -T -i $SSH_KEY \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              -o BatchMode=yes \
-              $VCL3_USER@$VCL3_HOST \
-              'cd ~/devops-project && if [ -f "config/cloudflared-config.yml" ]; then cp config/cloudflared-config.yml ~/.cloudflared/config.yml && echo "✓ Cloudflared config updated" && sudo systemctl restart cloudflared 2>/dev/null && echo "✓ Cloudflared restarted" || echo "⚠️  Cloudflared not installed or not running"; else echo "⚠️  Config file not found"; fi' 2>&1
-
-            if [ $? -eq 0 ]; then
-              echo "✓ VCL3 cloudflared config updated"
-            else
-              echo "⚠️  Failed to update cloudflared config on VCL3"
-            fi
+            echo "✓ VCL3 backup completed successfully"
           elif [ $EXIT_CODE -eq 124 ]; then
             echo "⚠️  VCL3 backup timed out after 30 seconds"
           else
             echo "⚠️  VCL3 backup failed (exit code: $EXIT_CODE)"
           fi
-
+          
           set -e
           rm -f ~/.ssh/vcl3_deploy_key || true
 
