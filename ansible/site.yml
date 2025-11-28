@@ -150,6 +150,10 @@
 - name: Deploy Application to VCL2
   import_playbook: deploy.yml
 
+# Step 4.5: Deploy Application Code to VCL3 (Standby)
+- name: Deploy Application Code to VCL3 (Standby)
+  import_playbook: deploy-vcl3-standby.yml
+
 # Step 5: Setup Database Replication
 - name: Setup Database Replication
   import_playbook: setup-replication.yml
