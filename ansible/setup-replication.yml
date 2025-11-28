@@ -38,7 +38,7 @@
 
           # Dump database from VCL2
           log "Creating database dump..."
-          if sudo docker exec coffee_db pg_dump -U postgres coffee_db > "${BACKUP_DIR}/${BACKUP_FILE}"; then
+          if sudo docker exec coffee_db pg_dump -U postgres coffee_dev > "${BACKUP_DIR}/${BACKUP_FILE}"; then
               log "Database dump created: ${BACKUP_FILE}"
           else
               log "ERROR: Failed to create database dump"
