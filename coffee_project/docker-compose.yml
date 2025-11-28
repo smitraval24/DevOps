@@ -1,0 +1,39 @@
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: coffee_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: coffee_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Coffee Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coffee_app
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/coffee_dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npm run migrate && node app.js"
+
+volumes:
+  postgres_data:

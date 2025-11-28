@@ -1,0 +1,23 @@
+[Unit]
+Description=Coffee DB Replication Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=vpatel29
+Group=vpatel29
+WorkingDirectory=/home/vpatel29/devops-project
+ExecStart=/home/vpatel29/devops-project/scripts/replicate-db.sh
+
+# Logging
+StandardOutput=append:/var/log/coffee-replication/replicate.log
+StandardError=append:/var/log/coffee-replication/replicate.log
+
+# Resource limits
+CPUQuota=50%
+MemoryLimit=512M
+
+# Restart on failure
+Restart=on-failure
+RestartSec=30s

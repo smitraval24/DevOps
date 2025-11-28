@@ -1,0 +1,51 @@
+---
+# Ansible Playbook: Deploy Coffee App Code to VCL3 (Standby)
+# Usage: ansible-playbook -i inventory.yml deploy-vcl3-standby.yml
+
+- name: Deploy Coffee App Code to VCL3 (Standby)
+  hosts: vcl3
+  gather_facts: no
+
+  tasks:
+    - name: Install rsync (required for synchronization)
+      become: yes
+      apt:
+        name: rsync
+        state: present
+
+    - name: Synchronize project code from VCL2 to VCL3
+      synchronize:
+        src: /home/{{ ansible_user }}/devops-project/
+        dest: /home/{{ ansible_user }}/devops-project/
+        delete: yes
+        recursive: yes
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=coffee_project/node_modules"
+
+    - name: Ensure Docker is running
+      become: yes
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Pre-build Docker images (but do not start containers)
+      shell: |
+        cd /home/{{ ansible_user }}/devops-project/coffee_project
+        sudo docker compose build
+      args:
+        executable: /bin/bash
+
+    - name: Ensure containers are STOPPED (Standby Mode)
+      shell: |
+        cd /home/{{ ansible_user }}/devops-project/coffee_project
+        sudo docker compose down
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Display standby status
+      debug:
+        msg: "✓ VCL3 is ready in standby mode. Code deployed and images built."
